@@ -1,0 +1,5 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "ESP32-C6-Zero")(type "KiCad")(uri "${KIPRJMOD}/ESP32-C6-Zero/ESP32-C6-Zero.pretty")(options "")(descr ""))
+  (lib (name "HLK2410C")(type "KiCad")(uri "${KIPRJMOD}/HLK2410C/HLK2410C.pretty")(options "")(descr ""))
+)
