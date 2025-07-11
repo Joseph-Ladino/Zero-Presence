@@ -1,0 +1,23 @@
+menu "LD2410C_UART_CONFIG"
+    config FOO_ENABLE_BAR_UART
+        bool "Enable the BAR UART feature."
+        help
+            This enables the BAR feature of the FOO component.
+
+    config SENSOR_UART_RX_BUFFER_SIZE
+        int "UART RX buffer size"
+        default 2048
+        help
+            UART RX buffer size in bytes
+        
+    config SENSOR_UART_TX_BUFFER_SIZE
+        int "UART TX buffer size"
+        default 2048
+        help
+            UART TX buffer size in bytes
+
+    config SENSOR_UART_QUEUE_SIZE
+        int "UART queue size"
+        default 10
+        
+endmenu
