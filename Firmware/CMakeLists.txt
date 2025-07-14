@@ -2,7 +2,8 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.16)
 
-set(COMPONENTS "main LD2410C-UART")
+set(MINIMAL_BUILD true)
+# set(COMPONENTS main esp_common freertos dht)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(motion-sensorless)

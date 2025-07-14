@@ -16,8 +16,34 @@ menu "LD2410C_UART_CONFIG"
         help
             UART TX buffer size in bytes
 
-    config SENSOR_UART_QUEUE_SIZE
-        int "UART queue size"
-        default 10
-        
+    # config SENSOR_UART_QUEUE_SIZE
+    #     int "UART queue size"
+    #     default 10
+    
+        config SENSOR_UART_PORT_NUM
+        int "Sensor UART port number"
+        range 0 2 if IDF_TARGET_ESP32 || IDF_TARGET_ESP32S3
+        default 2 if IDF_TARGET_ESP32 || IDF_TARGET_ESP32S3
+        range 0 1
+        default 1
+        help
+            UART communication port number for the LD2410C sensor.
+
+    config SENSOR_UART_RXD
+        int "Sensor UART RXD pin number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_RANGE_MAX
+        default 14
+        help
+            GPIO number for LD2410C UART RX pin. 
+
+    config SENSOR_UART_TXD
+        int "Sensor UART TXD pin number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_RANGE_MAX
+        default 15
+        help
+            GPIO number for LD2410C UART TX pin.
+
+    config SENSOR_UART_INITIAL_BAUD
+        int "UART Sensor initial baud_rate"
+        default 256000
 endmenu

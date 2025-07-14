@@ -1,6 +1,9 @@
 menu "MOTION_MAIN_CONFIG"
+    orsource "$IDF_PATH/examples/common_components/env_caps/$IDF_TARGET/Kconfig.env_caps"
+
     config FOO_ENABLE_BAR
     bool "Enable the BAR feature."
     help
         This enables the BAR feature of the FOO component.
+
 endmenu
