@@ -3,6 +3,8 @@
 
 using namespace LD2410C;
 
+static auto tag = "ESP32_UART_Adapter";
+
 int ESP32_UART_Adapter::write_bytes(uint8_t *data, uint32_t len) {
     return uart_write_bytes(port_num, data, len);
 }
@@ -38,6 +40,11 @@ ESP32_UART_Adapter::ESP32_UART_Adapter() : ESP32_UART_Adapter(
 LD2410C::ESP32_UART_Adapter::ESP32_UART_Adapter(uart_port_t port_num, uart_config_t config, uint16_t rx_pin, uint16_t tx_pin) : port_num(port_num), config(config) {
     // ESP_ERROR_CHECK(uart_driver_install(port_num, CONFIG_SENSOR_UART_RX_BUFFER_SIZE, CONFIG_SENSOR_UART_TX_BUFFER_SIZE, CONFIG_SENSOR_UART_QUEUE_SIZE, &uart_queue, 0));
     ESP_ERROR_CHECK(uart_driver_install(port_num, CONFIG_SENSOR_UART_RX_BUFFER_SIZE, CONFIG_SENSOR_UART_TX_BUFFER_SIZE, 0, NULL, 0));
+    ESP_LOGI(tag, "UART driver installed on port %d", port_num);
+
     ESP_ERROR_CHECK(uart_param_config(port_num, &this->config));
+    ESP_LOGI(tag, "UART parameters configured on port %d", port_num);
+
     ESP_ERROR_CHECK(uart_set_pin(port_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_LOGI(tag, "UART pins set on port %d: TX=%d, RX=%d", port_num, tx_pin, rx_pin);
 }

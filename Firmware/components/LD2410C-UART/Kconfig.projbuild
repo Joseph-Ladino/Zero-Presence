@@ -32,14 +32,14 @@ menu "LD2410C_UART_CONFIG"
     config SENSOR_UART_RXD
         int "Sensor UART RXD pin number"
         range ENV_GPIO_RANGE_MIN ENV_GPIO_RANGE_MAX
-        default 14
+        default 15
         help
             GPIO number for LD2410C UART RX pin. 
 
     config SENSOR_UART_TXD
         int "Sensor UART TXD pin number"
         range ENV_GPIO_RANGE_MIN ENV_GPIO_RANGE_MAX
-        default 15
+        default 14
         help
             GPIO number for LD2410C UART TX pin.
 

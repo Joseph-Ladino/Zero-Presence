@@ -1,11 +1,10 @@
 #pragma once
+#include <FrameParser.h>
 #include <algorithm>
 #include <bit>
 #include <concepts>
 #include <cstdint>
-#include <ranges>
 #include <span>
-#include <vector>
 
 namespace LD2410C {
     constexpr bool is_little_endian = std::endian::native == std::endian::little;
@@ -15,8 +14,6 @@ namespace LD2410C {
         { t.write_bytes(data, len) } -> std::same_as<int>;
         { t.read_bytes(data, len, timeout) } -> std::same_as<int>;
         { t.set_baud_rate(uint16_t()) } -> std::same_as<bool>;
-        // { t.set_rx_pin(uint16_t()) } -> std::same_as<bool>;
-        // { t.set_tx_pin(uint16_t()) } -> std::same_as<bool>;
     };
 
     enum class sensor_command : uint16_t {
@@ -118,12 +115,14 @@ namespace LD2410C {
         uart_ctrl_t &uart;
         sensor_config config;
 
+        FramerParser frame_parser{};
+
         static constexpr std::array<uint8_t, 4> command_header{0xFD, 0xFC, 0xFB, 0xFA}, command_footer{0x04, 0x03, 0x02, 0x01};
         static constexpr std::array<uint8_t, 4> status_header{0xF4, 0xF3, 0xF2, 0xF1}, status_footer{0xF8, 0xF7, 0xF6, 0xF5};
 
         constexpr std::vector<uint8_t> static create_command_frame(sensor_command sensor_command, std::span<uint8_t> data);
-        std::vector<uint8_t> static parse_status_frame(std::span<uint8_t> data);
-        void static process_command_frame(std::span<uint8_t> data);
+        std::vector<uint8_t> static handle_status_frame(std::span<uint8_t> data);
+        void static handle_command_frame(std::span<uint8_t> data);
 
         void write_frame(std::span<uint8_t> frame);
 
@@ -173,11 +172,16 @@ namespace LD2410C {
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::parse_status_frame(std::span<uint8_t> frame) {
+    inline std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::handle_status_frame(std::span<uint8_t> frame) {
 
         // TODO: refactor maybe?? why return vector???
 
         return std::vector<uint8_t>();
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline void PresenceSensor<uart_ctrl_t>::handle_command_frame(std::span<uint8_t> data) {
+        
     }
 
     template <uart_ctrl_req uart_ctrl_t>
@@ -202,44 +206,19 @@ namespace LD2410C {
         }
     }
 
-    enum class frame_parsing_state {
-        HEADER,
-
-        READ_SIZE_LOWER,
-        READ_SIZE_UPPER,
-
-        DATA,
-        FOOTER
-    };
-
-
     /*
         This whole function should be refactored into a class and/or several static functions.
-        
+
         TODO NOTE:
-            Commands that need a response will somehow need to be dealt with. 
+            Commands that need a response will somehow need to be dealt with.
             Maybe separate status frames from command responses somehow. Also, race conditions etc if run() is called from separate thread/cpu
             Restructuring necessary, core logic should work okay (untested, but builds)
     */
     template <uart_ctrl_req uart_ctrl_t>
     inline void PresenceSensor<uart_ctrl_t>::run() {
 
-        using enum frame_parsing_state;
-
-        size_t command_header_found_idx{0}, status_header_found_idx{0};
-        size_t command_footer_found_idx{0}, status_footer_found_idx{0};
-
-        uint16_t frame_data_size{0};
-
-        sensor_command frame_command_type;
-        std::vector<uint8_t> frame_data{};
-
-        bool frame_is_status = false;
-
         std::array<uint8_t, CONFIG_SENSOR_UART_RX_BUFFER_SIZE> rx_buffer{0};
         // std::size_t rx_buffer_written{0};
-
-        frame_parsing_state parsing_state = HEADER;
 
         while (true) {
             auto len_read = uart.read_bytes(rx_buffer.data(), rx_buffer.size(), 20);
@@ -251,99 +230,19 @@ namespace LD2410C {
             for (auto it = rx_view.begin(); it != rx_view.end(); ++it) {
                 uint8_t &f_byte = *it;
 
-                switch (parsing_state) {
-                    case HEADER: {
+                frame_parser.parse_byte(f_byte);
 
-                        if (f_byte == status_header[status_header_found_idx])
-                            ++status_header_found_idx;
-                        else
-                            status_header_found_idx = 0;
-
-                        if (status_header.size() == status_header_found_idx) {
-                            status_header_found_idx = 0;
-                            parsing_state = READ_SIZE_LOWER;
-                            frame_is_status = true;
-                            continue;
-                        }
-
-                        if (f_byte == command_header[command_header_found_idx])
-                            ++command_header_found_idx;
-                        else
-                            command_header_found_idx = 0;
-
-                        if (command_header.size() == command_header_found_idx) {
-                            command_header_found_idx = 0;
-                            parsing_state = READ_SIZE_LOWER;
-                            frame_is_status = false;
-                            continue;
-                        }
-                    } break;
-
-                    case READ_SIZE_LOWER: {
-                        if constexpr (is_little_endian)
-                            frame_data_size = f_byte << 8;
-                        else
-                            frame_data_size = f_byte;
-
-                        parsing_state = READ_SIZE_UPPER;
-                    } break;
-
-                    case READ_SIZE_UPPER: {
-                        if constexpr (is_little_endian)
-                            frame_data_size |= f_byte;
-                        else
-                            frame_data_size |= f_byte << 8;
-
-                        frame_data.reserve(frame_data_size);
-
-                        parsing_state = DATA;
-                    } break;
-
-                    case DATA: {
-                        if (frame_data.size() < frame_data_size)
-                            frame_data.push_back(f_byte);
-                        else {
-                            status_footer_found_idx = 0;
-                            command_footer_found_idx = 0;
-                            parsing_state = FOOTER;
-                        }
-                    } break;
-
-                    case FOOTER: {
-                        if (f_byte == status_footer[status_footer_found_idx])
-                            ++status_footer_found_idx;
-                        else
-                            status_footer_found_idx = 0; // error condition maybe
-
-                        if (status_footer.size() == status_footer_found_idx) {
-                            status_footer_found_idx = 0;
-                            parsing_state = HEADER;
-
-                            // call relevant method function thing
-
-                            continue;
-                        }
-
-                        if (f_byte == command_footer[command_footer_found_idx])
-                            ++command_footer_found_idx;
-                        else
-                            command_footer_found_idx = 0;
-
-                        if (command_footer.size() == command_footer_found_idx) {
-                            command_footer_found_idx = 0;
-                            parsing_state = HEADER;
-
-                            // call relevant method function thing
-
-                            continue;
-                        }
+                if (frame_parser.done()) {
+                    if (frame_parser.is_frame_command()) {
+                        handle_command_frame(frame_parser.get_frame_data());
+                    } else if (frame_parser.is_frame_status()) {
+                        handle_status_frame(frame_parser.get_frame_data());
                     }
 
-                    default:
-                        break;
+                    frame_parser.reset();
                 }
             }
-        }
-    }
 
-} // namespace LD2410C
+        } // namespace LD2410C
+    }
+}

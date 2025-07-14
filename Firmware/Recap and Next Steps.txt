@@ -1,0 +1,33 @@
+Recap and Next Steps
+1. Refactor the run() method
+Extract frame parsing logic into a dedicated FrameParser class.
+Keep run() focused on just reading bytes and dispatching complete frames.
+
+2. Policy-based approach
+Use policy classes for platform-dependent functionality:
+MutexPolicy: Wraps mutex/locking (e.g., std::mutex or FreeRTOS semaphore).
+QueuePolicy: For command/response queues (e.g., std::queue + std::condition_variable or FreeRTOS queue).
+(Optional) ThreadPolicy: For launching/controlling threads/tasks if needed.
+This keeps your code portable and easy to extend/test.
+
+3. Transition uart_ctrl
+Move away from a pure concept to a policy-based design, or use a hybrid (concept to enforce interface + policy for platform details).
+This gives you more flexibility for adding behaviors (mutex, queue, etc.) without bloating the UART abstraction.
+
+4. Blocking command handling
+Each command method (e.g., get_config()) sends a command and blocks until its response is received.
+Use a queue or similar primitive (not necessarily std::promise, given embedded constraints) to match responses to requests.
+Status frames are handled separately, ideally via a callback or event mechanism.
+
+5. Stay Embedded-Friendly
+Minimize dynamic allocation.
+Avoid heavy STL features if memory/CPU is tight.
+Test with your target (ESP32/FreeRTOS) to ensure performance and reliability.
+
+
+Actionable Steps:
+- Define policies for mutex and queues for both STL and FreeRTOS.
+- Refactor your sensor class to accept these policies as template parameters.
+- Implement a FrameParser class for protocol/state machine handling.
+- Rework command/response logic using queues or other lightweight primitives.
+- Document the design for future maintainability and clarity.
