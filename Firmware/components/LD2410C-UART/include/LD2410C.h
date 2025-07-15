@@ -115,6 +115,7 @@ namespace LD2410C {
         uart_ctrl_t &uart;
         sensor_config config;
 
+        std::array<uint8_t, CONFIG_SENSOR_UART_RX_BUFFER_SIZE> rx_buffer{0};
         FramerParser frame_parser{};
 
         static constexpr std::array<uint8_t, 4> command_header{0xFD, 0xFC, 0xFB, 0xFA}, command_footer{0x04, 0x03, 0x02, 0x01};
@@ -181,7 +182,6 @@ namespace LD2410C {
 
     template <uart_ctrl_req uart_ctrl_t>
     inline void PresenceSensor<uart_ctrl_t>::handle_command_frame(std::span<uint8_t> data) {
-        
     }
 
     template <uart_ctrl_req uart_ctrl_t>
@@ -217,30 +217,25 @@ namespace LD2410C {
     template <uart_ctrl_req uart_ctrl_t>
     inline void PresenceSensor<uart_ctrl_t>::run() {
 
-        std::array<uint8_t, CONFIG_SENSOR_UART_RX_BUFFER_SIZE> rx_buffer{0};
-        // std::size_t rx_buffer_written{0};
+        auto len_read = uart.read_bytes(rx_buffer.data(), rx_buffer.size(), 20);
 
-        while (true) {
-            auto len_read = uart.read_bytes(rx_buffer.data(), rx_buffer.size(), 20);
+        if (len_read < 1) return;
 
-            if (len_read < 1) continue;
+        auto rx_view = std::span<uint8_t>{rx_buffer.begin(), static_cast<uint32_t>(len_read)};
 
-            auto rx_view = std::span<uint8_t>{rx_buffer.begin(), rx_buffer.end() + len_read};
+        for (auto it = rx_view.begin(); it != rx_view.end(); ++it) {
+            uint8_t &f_byte = *it;
 
-            for (auto it = rx_view.begin(); it != rx_view.end(); ++it) {
-                uint8_t &f_byte = *it;
+            frame_parser.parse_byte(f_byte);
 
-                frame_parser.parse_byte(f_byte);
-
-                if (frame_parser.done()) {
-                    if (frame_parser.is_frame_command()) {
-                        handle_command_frame(frame_parser.get_frame_data());
-                    } else if (frame_parser.is_frame_status()) {
-                        handle_status_frame(frame_parser.get_frame_data());
-                    }
-
-                    frame_parser.reset();
+            if (frame_parser.done()) {
+                if (frame_parser.is_frame_command()) {
+                    handle_command_frame(frame_parser.get_frame_data());
+                } else if (frame_parser.is_frame_status()) {
+                    handle_status_frame(frame_parser.get_frame_data());
                 }
+
+                frame_parser.reset();
             }
 
         } // namespace LD2410C

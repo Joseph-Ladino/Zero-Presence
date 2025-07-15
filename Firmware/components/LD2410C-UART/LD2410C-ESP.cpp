@@ -11,11 +11,18 @@ int ESP32_UART_Adapter::write_bytes(uint8_t *data, uint32_t len) {
 
 int LD2410C::ESP32_UART_Adapter::read_bytes(uint8_t *data, uint32_t max_length, uint16_t timeout_ms) {
     size_t buffered_length = 0;
-    ESP_ERROR_CHECK(uart_get_buffered_data_len(port_num, (size_t *)&buffered_length));
+    ESP_ERROR_CHECK(uart_get_buffered_data_len(port_num, &buffered_length));
 
     if(buffered_length == 0) return 0;
 
     return uart_read_bytes(port_num, data, std::min(max_length, static_cast<uint32_t>(buffered_length)), timeout_ms / portTICK_PERIOD_MS);
+}
+
+bool LD2410C::ESP32_UART_Adapter::can_read_bytes() {
+    size_t buffered_length = 0;
+    ESP_ERROR_CHECK(uart_get_buffered_data_len(port_num, &buffered_length));
+
+    return buffered_length > 0;
 }
 
 bool LD2410C::ESP32_UART_Adapter::set_baud_rate(uint16_t baud_rate) {

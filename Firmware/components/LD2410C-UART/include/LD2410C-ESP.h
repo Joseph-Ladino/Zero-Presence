@@ -13,6 +13,7 @@ namespace LD2410C {
 
         int write_bytes(uint8_t *data, uint32_t len);
         int read_bytes(uint8_t *data, uint32_t len, uint16_t timeout);
+        bool can_read_bytes();
         bool set_baud_rate(uint16_t baud_rate);
 
         ESP32_UART_Adapter();
