@@ -5,11 +5,11 @@ using namespace LD2410C;
 
 static auto tag = "ESP32_UART_Adapter";
 
-int ESP32_UART_Adapter::write_bytes(uint8_t *data, uint32_t len) {
+int ESP32_UART_Adapter::write_bytes(uint8_t *data, uint32_t len) const {
     return uart_write_bytes(port_num, data, len);
 }
 
-int LD2410C::ESP32_UART_Adapter::read_bytes(uint8_t *data, uint32_t max_length, uint16_t timeout_ms) {
+int LD2410C::ESP32_UART_Adapter::read_bytes(uint8_t *data, uint32_t max_length, uint16_t timeout_ms) const {
     size_t buffered_length = 0;
     ESP_ERROR_CHECK(uart_get_buffered_data_len(port_num, &buffered_length));
 
@@ -18,7 +18,7 @@ int LD2410C::ESP32_UART_Adapter::read_bytes(uint8_t *data, uint32_t max_length, 
     return uart_read_bytes(port_num, data, std::min(max_length, static_cast<uint32_t>(buffered_length)), timeout_ms / portTICK_PERIOD_MS);
 }
 
-bool LD2410C::ESP32_UART_Adapter::can_read_bytes() {
+bool LD2410C::ESP32_UART_Adapter::can_read_bytes() const {
     size_t buffered_length = 0;
     ESP_ERROR_CHECK(uart_get_buffered_data_len(port_num, &buffered_length));
 

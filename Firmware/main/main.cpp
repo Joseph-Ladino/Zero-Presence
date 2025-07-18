@@ -20,11 +20,11 @@ extern "C" void app_main(void);
 
 auto tag = "app_main";
 
+LD2410C::ESP32_UART_Adapter uart_adapter{};
+LD2410C::PresenceSensor sensor(uart_adapter);
+
 void app_main(void) {
     using namespace LD2410C;
-
-    ESP32_UART_Adapter uart_adapter{};
-    PresenceSensor sensor(uart_adapter);
 
     // Create the task, passing the sensor pointer as parameter
     xTaskCreate(
@@ -33,11 +33,28 @@ void app_main(void) {
 
             while(true) {
                 sensorPtr->run();
-                vTaskDelay(1 / portTICK_PERIOD_MS);
+                vTaskDelay(100 / portTICK_PERIOD_MS);
             }
             vTaskDelete(NULL);
         },
-        "presence_sensor_uart", 3072, &sensor, 5, NULL);
+        "presence_sensor_uart", 3072, &sensor, 5, NULL
+    );
+
+    xTaskCreate(
+        [](void *pvParameters) {
+            auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
+
+            while(true) {
+                // Example: Set engineering mode
+                sensorPtr->set_config_mode(true);
+                vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+                sensorPtr->set_config_mode(false);
+                vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+            }
+            vTaskDelete(NULL);
+        },
+        "engineering_mode_task", 2048, &sensor, 5, NULL
+    );
 
     // ESP_LOGI(tag, "Main task running...");
     // while (true) {
@@ -48,11 +65,9 @@ void app_main(void) {
     //     uint8_t buffer[buffer_size];
     //     int bytes_read = uart_adapter.read_bytes(buffer, buffer_size, 20);
     //     if (bytes_read > 0) {
-    //         ESP_LOGI(tag, "Read %d bytes from UART", bytes_read);
+    //         // ESP_LOGI(tag, "Read %d bytes from UART", bytes_read);
     //         std::span<uint8_t> data_span(buffer);
-    //         print_frame(data_span.subspan(0, bytes_read));
-    //     } else {
-    //         ESP_LOGI(tag, "No data read from UART");
+    //         log_frame(data_span.subspan(0, bytes_read));
     //     }
     // }
 }

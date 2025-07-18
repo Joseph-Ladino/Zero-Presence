@@ -121,7 +121,7 @@ namespace LD2410C {
         static constexpr std::array<uint8_t, 4> command_header{0xFD, 0xFC, 0xFB, 0xFA}, command_footer{0x04, 0x03, 0x02, 0x01};
         static constexpr std::array<uint8_t, 4> status_header{0xF4, 0xF3, 0xF2, 0xF1}, status_footer{0xF8, 0xF7, 0xF6, 0xF5};
 
-        constexpr std::vector<uint8_t> static create_command_frame(sensor_command sensor_command, std::span<uint8_t> data);
+        constexpr std::vector<uint8_t> static create_command_frame(sensor_command sensor_command, std::span<const uint8_t> data);
         std::vector<uint8_t> static handle_status_frame(std::span<uint8_t> data);
         void static handle_command_frame(std::span<uint8_t> data);
 
@@ -144,7 +144,7 @@ namespace LD2410C {
     };
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline constexpr std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::create_command_frame(sensor_command sensor_command, std::span<uint8_t> data) {
+    inline constexpr std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::create_command_frame(sensor_command sensor_command, std::span<const uint8_t> data) {
         std::vector<uint8_t> out_frame{command_header.begin(), command_header.end()}; // frame header
 
         uint16_t data_len = static_cast<uint16_t>(2 + data.size()); // length includes 2 byte command
