@@ -116,29 +116,6 @@ void FramerParser::reset() {
     is_done = false;
 }
 
-#include "esp_log.h"
-#include <cstdio>
-
-// void print_frame(std::span<uint8_t> frame) {
-//     char buffer[3 * frame.size() + 1]; // 2 hex digits + space for each byte + null terminator
-//     size_t index = 0;
-    
-//     for (const auto &byte : frame) {
-//         auto len = snprintf(buffer + index, sizeof(buffer)/sizeof(buffer[0]) - index, "%02X ", byte);
-        
-//         if(len < 0 || len >= sizeof(buffer) - index) {
-//             ESP_LOGE("FrameParser", "Buffer overflow while formatting frame data");
-//             return;
-//         }
-//         // index += 3; // 2 for hex digits + 1 for space
-//     }
-
-//     ESP_LOGI("FrameParser", "Parsed frame: %s", buffer);
-// }
-
-#include "LD2410C-ESP.h"
-
 std::span<uint8_t> FramerParser::get_frame_data() {
-    log_frame({frame_data.begin(), frame_data.end()});
     return std::span{frame_data.begin(), frame_data.end()};
 }

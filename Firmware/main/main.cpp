@@ -26,35 +26,46 @@ LD2410C::PresenceSensor sensor(uart_adapter);
 void app_main(void) {
     using namespace LD2410C;
 
+    auto config_task = [](void *pvParameters) {
+        auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
+
+        while (true) {
+            // Example: Set engineering mode
+            sensorPtr->set_config_mode(true);
+            vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+            sensorPtr->set_config_mode(false);
+            vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+        }
+        vTaskDelete(NULL);
+    };
+
+    auto engineer_task = [](void *pvParameters) {
+        auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
+
+        while (true) {
+            // Example: Set engineering mode
+            sensorPtr->set_engineering_mode(true);
+            vTaskDelay(3000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+            sensorPtr->set_engineering_mode(false);
+            vTaskDelay(3000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+        }
+        vTaskDelete(NULL);
+    };
+
     // Create the task, passing the sensor pointer as parameter
-    xTaskCreate(
-        [](void *pvParameters) {
-            auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
+    xTaskCreate([](void *pvParameters) {
+        auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
 
-            while(true) {
-                sensorPtr->run();
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-            }
-            vTaskDelete(NULL);
-        },
-        "presence_sensor_uart", 3072, &sensor, 5, NULL
-    );
+        while (true) {
+            sensorPtr->run();
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+        vTaskDelete(NULL);
+    },
+                "presence_sensor_uart", 3072, &sensor, 5, NULL);
 
-    xTaskCreate(
-        [](void *pvParameters) {
-            auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
-
-            while(true) {
-                // Example: Set engineering mode
-                sensorPtr->set_config_mode(true);
-                vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
-                sensorPtr->set_config_mode(false);
-                vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
-            }
-            vTaskDelete(NULL);
-        },
-        "engineering_mode_task", 2048, &sensor, 5, NULL
-    );
+    xTaskCreate(config_task, "engineering_mode_task_1", 2048, &sensor, 5, NULL);
+    xTaskCreate(engineer_task, "engineering_mode_task_2", 2048, &sensor, 5, NULL);
 
     // ESP_LOGI(tag, "Main task running...");
     // while (true) {

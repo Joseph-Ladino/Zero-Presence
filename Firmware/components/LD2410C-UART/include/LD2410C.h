@@ -1,13 +1,18 @@
 #pragma once
 #include <FrameParser.h>
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <concepts>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace LD2410C {
     constexpr bool is_little_endian = std::endian::native == std::endian::little;
+
+    extern void log_frame(std::span<uint8_t> frame);
+    extern void log_frame(const char *tag, std::span<uint8_t> frame);
 
     template <typename T>
     concept uart_ctrl_req = requires(T t, uint8_t *data, uint32_t len, uint16_t timeout) {
@@ -118,14 +123,19 @@ namespace LD2410C {
         std::array<uint8_t, CONFIG_SENSOR_UART_RX_BUFFER_SIZE> rx_buffer{0};
         FramerParser frame_parser{};
 
+        std::atomic_flag command_sent{false}, // used to signal that a command is being sent
+            command_response_ready{false};    // used to signal that a command response is ready
+        std::vector<uint8_t> command_response_frame{};
+
         static constexpr std::array<uint8_t, 4> command_header{0xFD, 0xFC, 0xFB, 0xFA}, command_footer{0x04, 0x03, 0x02, 0x01};
         static constexpr std::array<uint8_t, 4> status_header{0xF4, 0xF3, 0xF2, 0xF1}, status_footer{0xF8, 0xF7, 0xF6, 0xF5};
 
-        constexpr std::vector<uint8_t> static create_command_frame(sensor_command sensor_command, std::span<const uint8_t> data);
-        std::vector<uint8_t> static handle_status_frame(std::span<uint8_t> data);
-        void static handle_command_frame(std::span<uint8_t> data);
+        static constexpr std::vector<uint8_t> create_command_frame(sensor_command sensor_command, std::span<const uint8_t> data);
 
-        void write_frame(std::span<uint8_t> frame);
+        std::vector<uint8_t> handle_status_frame(std::span<uint8_t> data);
+        void handle_command_frame(std::span<uint8_t> data);
+
+        void send_command(sensor_command sensor_command, std::span<const uint8_t> data);
 
     public:
         void set_engineering_mode(bool enabled);
@@ -176,34 +186,72 @@ namespace LD2410C {
     inline std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::handle_status_frame(std::span<uint8_t> frame) {
 
         // TODO: refactor maybe?? why return vector???
+        // log_frame(frame);
 
         return std::vector<uint8_t>();
     }
 
     template <uart_ctrl_req uart_ctrl_t>
     inline void PresenceSensor<uart_ctrl_t>::handle_command_frame(std::span<uint8_t> data) {
+        // blocks until command_sent is true
+        command_sent.wait(false);
+        command_sent.clear();
+
+        command_response_frame.clear();
+        command_response_frame.assign(data.cbegin(), data.cend());
+
+        command_response_ready.test_and_set();
+        command_response_ready.notify_one();
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline void PresenceSensor<uart_ctrl_t>::write_frame(std::span<uint8_t> frame) {
-        auto bytes_written = uart.write_bytes(frame.data(), frame.size_bytes());
-        if (bytes_written != frame.size_bytes()) {
+    inline void PresenceSensor<uart_ctrl_t>::send_command(sensor_command sensor_command, std::span<const uint8_t> data) {
+        auto frame = create_command_frame(sensor_command, data);
+
+        // blocks until command_sent is false
+        // this is to ensure that only one command is sent at a time
+        command_sent.wait(true);
+        command_sent.test_and_set();
+
+        log_frame("sent frame", std::span<uint8_t>{frame.data()+6, frame.size()-10}); // log without header and footer
+
+        auto bytes_written = uart.write_bytes(frame.data(), frame.size());
+        if (bytes_written != frame.size()) {
             // TODO: handle this
         }
+
+        command_response_ready.wait(false); // wait for command response
+
+        // data ready
+        log_frame("rcvd frame", command_response_frame);
+
+        command_response_ready.clear();
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline void PresenceSensor<uart_ctrl_t>::set_config_mode(bool enabled) {
+    inline void PresenceSensor<uart_ctrl_t>::set_engineering_mode(bool enabled) {
         constexpr std::array<uint8_t, 2> enable_config_data{0x01, 0x0};
         constexpr std::array<uint8_t, 0> disable_config_data{};
 
         if (enabled) {
-            auto frame = create_command_frame(sensor_command::ENABLE_CONFIG_MODE, std::span(enable_config_data));
-            write_frame(frame);
+            send_command(sensor_command::ENABLE_ENGINEERING_MODE, std::span(enable_config_data));
         } else {
-            auto frame = create_command_frame(sensor_command::DISABLE_CONFIG_MODE, std::span(disable_config_data));
-            write_frame(frame);
+            send_command(sensor_command::DISABLE_ENGINEERING_MODE, std::span(disable_config_data));
         }
+
+        config.engr_mode_en = enabled;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline void PresenceSensor<uart_ctrl_t>::set_config_mode(bool enabled) {
+
+        if (enabled) {
+            send_command(sensor_command::ENABLE_CONFIG_MODE, {});
+        } else {
+            send_command(sensor_command::DISABLE_CONFIG_MODE, {});
+        }
+
+        config.config_mode_en = enabled;
     }
 
     /*

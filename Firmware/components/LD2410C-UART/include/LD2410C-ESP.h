@@ -20,7 +20,9 @@ namespace LD2410C {
         ESP32_UART_Adapter(uart_port_t port_num, uart_config_t config, uint16_t rx_pin, uint16_t tx_pin);
     };
 
-    inline void log_frame(std::span<uint8_t> frame) {
+    
+
+    inline void log_frame(const char *tag, std::span<uint8_t> frame) {
         char *hex = new char[frame.size() * 3 + 1];
         constexpr auto fmt = "%02X ";
         constexpr auto fmt_render_len = 3;
@@ -30,8 +32,12 @@ namespace LD2410C {
 
         hex[frame.size() * fmt_render_len] = '\0';
 
-        ESP_LOGI("LD2410C frame", "{ %s }", hex);
+        ESP_LOGI(tag, "{ %s }", hex);
 
         delete[] hex;
+    }
+
+    inline void log_frame(std::span<uint8_t> frame) {
+        log_frame("LD2410C frame", frame);
     }
 }
