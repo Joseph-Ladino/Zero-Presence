@@ -2,8 +2,7 @@
 #include "LD2410C.h"
 
 using namespace LD2410C;
-
-void FramerParser::parse_byte(uint8_t f_byte) {
+void FrameParser::parse_byte(uint8_t f_byte) {
 
     using enum parsing_state;
 
@@ -91,17 +90,17 @@ void FramerParser::parse_byte(uint8_t f_byte) {
     }
 }
 
-bool FramerParser::is_frame_command() {
+bool FrameParser::is_frame_command() {
     return !is_status;
 }
-bool FramerParser::is_frame_status() {
+bool FrameParser::is_frame_status() {
     return is_status;
 }
-bool FramerParser::done() {
+bool FrameParser::done() {
     return is_done;
 }
 
-void FramerParser::reset() {
+void FrameParser::reset() {
     state = parsing_state::HEADER;
 
     command_header_found_idx = 0;
@@ -116,6 +115,6 @@ void FramerParser::reset() {
     is_done = false;
 }
 
-std::span<uint8_t> FramerParser::get_frame_data() {
+std::span<uint8_t> FrameParser::get_frame_data() {
     return std::span{frame_data.begin(), frame_data.end()};
 }

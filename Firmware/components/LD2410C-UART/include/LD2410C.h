@@ -1,5 +1,5 @@
 #pragma once
-#include <FrameParser.h>
+#include "FrameParser.h"
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -19,71 +19,6 @@ namespace LD2410C {
         { t.write_bytes(data, len) } -> std::same_as<int>;
         { t.read_bytes(data, len, timeout) } -> std::same_as<int>;
         { t.set_baud_rate(uint16_t()) } -> std::same_as<bool>;
-    };
-
-    enum class sensor_command : uint16_t {
-        ENABLE_CONFIG_MODE = 0x00FF,
-        ENABLE_CONFIG_MODE_ACK = 0x01FF,
-
-        DISABLE_CONFIG_MODE = 0x00FE,
-        DISABLE_CONFIG_MODE_ACK = 0x01FE,
-
-        SET_MAX_DISTANCE_DURATION = 0x0060,
-        SET_MAX_DISTANCE_DURATION_ACK = 0x00160,
-
-        GET_CONFIG = 0x0061,
-        GET_CONFIG_ACK = 0x0161,
-
-        ENABLE_ENGINEERING_MODE = 0x0062,
-        ENABLE_ENGINEERING_MODE_ACK = 0x0162,
-
-        DISABLE_ENGINEERING_MODE = 0x0063,
-        DISABLE_ENGINEERING_MODE_ACK = 0x0163,
-
-        SET_GATE_SENSITIVITY = 0x0064,
-        SET_GATE_SENSITIVITY_ACK = 0x0164,
-
-        GET_FIRMWARE_VERSION = 0x00A0,
-        // GET_FIRMWARE_VERSION_ACK = 0x01A0, // no ack ??
-
-        SET_SERIAL_BAUD = 0x00A1,
-        SET_SERIAL_BAUD_ACK = 0x01A1,
-
-        RESET_CONFIG = 0x00A2,
-        RESET_CONFIG_ACK = 0x01A2,
-
-        RESTART_SENSOR = 0x00A3,
-        RESTART_SENSOR_ACK = 0x01A3,
-
-        SET_BLUETOOTH = 0x00A4,
-        SET_BLUETOOTH_ACK = 0x01A4,
-
-        GET_MAC_ADDRESS = 0x00A5,
-        GET_MAC_ADDRESS_ACK = 0x01A5,
-
-        GET_BLUETOOTH_PERMISSIONS = 0x00A8,
-        GET_BLUETOOTH_PERMISSIONS_ACK = 0x01A8,
-
-        SET_BLUETOOTH_PASSWORD = 0x00A8,
-        SET_BLUETOOTH_PASSWORD_ACK = 0x01A8,
-
-        SET_DISTANCE_RESOLUTION = 0x00AA,
-        SET_DISTANCE_RESOLUTION_ACK = 0x01A1, // 0x01AA
-
-        GET_DISTANCE_RESOLUTION = 0x00AB,
-        GET_DISTANCE_RESOLUTION_ACK = 0x01AB,
-
-        SET_AUXILIARY_CONTROL = 0x00AD,
-        SET_AUXILIARY_CONTROL_ACK = 0x01AD,
-
-        GET_AUXILIARY_CONTROL = 0x00AE,
-        GET_AUXILIARY_CONTROL_ACK = 0x01AE,
-
-        START_NOISE_CALIBRATION = 0x000B,
-        START_NOISE_CALIBRATION_ACK = 0x010B,
-
-        GET_NOISE_CALIBRATION_STATUS = 0x001B,
-        GET_NOISE_CALIBRATION_STATUS_ACK = 0x011B
     };
 
     enum class sensor_baud_rate : uint16_t {
@@ -121,7 +56,7 @@ namespace LD2410C {
         sensor_config config;
 
         std::array<uint8_t, CONFIG_SENSOR_UART_RX_BUFFER_SIZE> rx_buffer{0};
-        FramerParser frame_parser{};
+        FrameParser frame_parser{};
 
         std::atomic_flag command_sent{false}, // used to signal that a command is being sent
             command_response_ready{false};    // used to signal that a command response is ready
@@ -135,7 +70,7 @@ namespace LD2410C {
         std::vector<uint8_t> handle_status_frame(std::span<uint8_t> data);
         void handle_command_frame(std::span<uint8_t> data);
 
-        void send_command(sensor_command sensor_command, std::span<const uint8_t> data);
+        std::vector<uint8_t> send_command(sensor_command sensor_command, std::span<const uint8_t> data);
 
     public:
         void set_engineering_mode(bool enabled);
@@ -205,15 +140,15 @@ namespace LD2410C {
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline void PresenceSensor<uart_ctrl_t>::send_command(sensor_command sensor_command, std::span<const uint8_t> data) {
-        auto frame = create_command_frame(sensor_command, data);
+    inline std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::send_command(sensor_command command, std::span<const uint8_t> data) {
+        auto frame = create_command_frame(command, data);
 
         // blocks until command_sent is false
         // this is to ensure that only one command is sent at a time
         command_sent.wait(true);
         command_sent.test_and_set();
 
-        log_frame("sent frame", std::span<uint8_t>{frame.data()+6, frame.size()-10}); // log without header and footer
+        log_frame("sent frame", std::span<uint8_t>{frame.data() + 6, frame.size() - 10}); // log without header and footer
 
         auto bytes_written = uart.write_bytes(frame.data(), frame.size());
         if (bytes_written != frame.size()) {
@@ -223,9 +158,20 @@ namespace LD2410C {
         command_response_ready.wait(false); // wait for command response
 
         // data ready
-        log_frame("rcvd frame", command_response_frame);
-
+        auto response = command_response_frame;
         command_response_ready.clear();
+
+        log_frame("rcvd frame", response);
+
+        // verify success
+        auto response_command = FrameParser::get_command_from_frame(response);
+        auto expected_command = static_cast<sensor_command>(static_cast<uint16_t>(command) | 0x0100); // ACK command
+
+        bool success = response_command == expected_command && response.size() >= 4 && response[2] == 0x00 && response[3] == 0x00; // check if ACK and no error
+
+        // TODO: handle error cases, maybe throw exception or return error code, maybe std::optional return type
+
+        return response;
     }
 
     template <uart_ctrl_req uart_ctrl_t>
@@ -233,22 +179,48 @@ namespace LD2410C {
         constexpr std::array<uint8_t, 2> enable_config_data{0x01, 0x0};
         constexpr std::array<uint8_t, 0> disable_config_data{};
 
-        if (enabled) {
-            send_command(sensor_command::ENABLE_ENGINEERING_MODE, std::span(enable_config_data));
-        } else {
-            send_command(sensor_command::DISABLE_ENGINEERING_MODE, std::span(disable_config_data));
-        }
+        auto enable_engineering_mode = [&]() {
+            auto response = send_command(sensor_command::ENABLE_ENGINEERING_MODE, enable_config_data);
+            auto response_command = FrameParser::get_command_from_frame(response);
+            if (response_command != sensor_command::ENABLE_ENGINEERING_MODE_ACK) {
+                return false; // error
+            }
 
-        config.engr_mode_en = enabled;
+            if (response[2] != 0x00 || response[3] != 0x00) {
+                return false; // error
+            }
+            config.engr_mode_en = true;
+
+            return true; // success
+        };
+
+        auto disable_engineering_mode = [&]() {
+            auto response = send_command(sensor_command::DISABLE_ENGINEERING_MODE, {});
+            auto response_command = FrameParser::get_command_from_frame(response);
+            if (response_command != sensor_command::DISABLE_ENGINEERING_MODE_ACK) {
+                return false; // error
+            }
+
+            if (response[2] != 0x00 || response[3] != 0x00) {
+                return false; // error
+            }
+            config.engr_mode_en = false;
+
+            return true; // success
+        };
+
+        if(enabled) enable_engineering_mode();
+        else disable_engineering_mode();
     }
 
     template <uart_ctrl_req uart_ctrl_t>
     inline void PresenceSensor<uart_ctrl_t>::set_config_mode(bool enabled) {
 
+        std::vector<uint8_t> response;
         if (enabled) {
-            send_command(sensor_command::ENABLE_CONFIG_MODE, {});
+            response = send_command(sensor_command::ENABLE_CONFIG_MODE, {});
         } else {
-            send_command(sensor_command::DISABLE_CONFIG_MODE, {});
+            response = send_command(sensor_command::DISABLE_CONFIG_MODE, {});
         }
 
         config.config_mode_en = enabled;
