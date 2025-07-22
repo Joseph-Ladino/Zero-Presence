@@ -70,18 +70,18 @@ namespace LD2410C {
         std::vector<uint8_t> handle_status_frame(std::span<uint8_t> data);
         void handle_command_frame(std::span<uint8_t> data);
 
-        std::vector<uint8_t> send_command(sensor_command sensor_command, std::span<const uint8_t> data);
+        std::optional<std::vector<uint8_t>> send_command(sensor_command sensor_command, std::span<const uint8_t> data);
 
     public:
-        void set_engineering_mode(bool enabled);
-        void set_bluetooth_mode(bool enabled);
-        void set_config_mode(bool enabled);
+        bool set_engineering_mode(bool enabled);
+        bool set_bluetooth_mode(bool enabled);
+        bool set_config_mode(bool enabled);
 
-        void set_baud_rate(sensor_baud_rate baud_rate);
-        void set_baud_rate(uint16_t baud_rate);
+        bool set_baud_rate(sensor_baud_rate baud_rate);
+        bool set_baud_rate(uint16_t baud_rate);
 
-        void restart();
-        void reset();
+        bool restart();
+        bool reset();
 
         void run();
 
@@ -140,7 +140,7 @@ namespace LD2410C {
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::send_command(sensor_command command, std::span<const uint8_t> data) {
+    inline std::optional<std::vector<uint8_t>> PresenceSensor<uart_ctrl_t>::send_command(sensor_command command, std::span<const uint8_t> data) {
         auto frame = create_command_frame(command, data);
 
         // blocks until command_sent is false
@@ -164,76 +164,78 @@ namespace LD2410C {
         log_frame("rcvd frame", response);
 
         // verify success
+
         auto response_command = FrameParser::get_command_from_frame(response);
+        if (!response_command.has_value()) return std::nullopt; // no command in response
+
         auto expected_command = static_cast<sensor_command>(static_cast<uint16_t>(command) | 0x0100); // ACK command
 
-        bool success = response_command == expected_command && response.size() >= 4 && response[2] == 0x00 && response[3] == 0x00; // check if ACK and no error
+        bool success = response_command.value() == expected_command && response.size() >= 4 && response[2] == 0x00 && response[3] == 0x00; // check if ACK and no error
 
-        // TODO: handle error cases, maybe throw exception or return error code, maybe std::optional return type
+        if(success)
+            return std::vector<uint8_t> { response.begin() + 4, response.end() };
 
-        return response;
+        return std::nullopt; // command failed, return empty optional
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline void PresenceSensor<uart_ctrl_t>::set_engineering_mode(bool enabled) {
+    inline bool PresenceSensor<uart_ctrl_t>::set_engineering_mode(bool enabled) {
         constexpr std::array<uint8_t, 2> enable_config_data{0x01, 0x0};
         constexpr std::array<uint8_t, 0> disable_config_data{};
 
-        auto enable_engineering_mode = [&]() {
-            auto response = send_command(sensor_command::ENABLE_ENGINEERING_MODE, enable_config_data);
-            auto response_command = FrameParser::get_command_from_frame(response);
-            if (response_command != sensor_command::ENABLE_ENGINEERING_MODE_ACK) {
-                return false; // error
-            }
+        std::optional<std::vector<uint8_t>> response;
+        if (enabled)
+            response = send_command(sensor_command::ENABLE_ENGINEERING_MODE, enable_config_data);
+        else
+            response = send_command(sensor_command::DISABLE_ENGINEERING_MODE, disable_config_data);
 
-            if (response[2] != 0x00 || response[3] != 0x00) {
-                return false; // error
-            }
-            config.engr_mode_en = true;
+        if (!response.has_value()) {
+            return false; // command failed
+        }
 
-            return true; // success
-        };
+        config.engr_mode_en = enabled;
 
-        auto disable_engineering_mode = [&]() {
-            auto response = send_command(sensor_command::DISABLE_ENGINEERING_MODE, {});
-            auto response_command = FrameParser::get_command_from_frame(response);
-            if (response_command != sensor_command::DISABLE_ENGINEERING_MODE_ACK) {
-                return false; // error
-            }
-
-            if (response[2] != 0x00 || response[3] != 0x00) {
-                return false; // error
-            }
-            config.engr_mode_en = false;
-
-            return true; // success
-        };
-
-        if(enabled) enable_engineering_mode();
-        else disable_engineering_mode();
+        return true; // command succeeded
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline void PresenceSensor<uart_ctrl_t>::set_config_mode(bool enabled) {
+    inline bool PresenceSensor<uart_ctrl_t>::set_bluetooth_mode(bool enabled) {
+        
+        constexpr std::array<uint8_t, 2> enable_bluetooth_data{0x01, 0x00};
+        constexpr std::array<uint8_t, 2> disable_bluetooth_data{0x00, 0x00};
 
-        std::vector<uint8_t> response;
-        if (enabled) {
-            response = send_command(sensor_command::ENABLE_CONFIG_MODE, {});
-        } else {
-            response = send_command(sensor_command::DISABLE_CONFIG_MODE, {});
+        auto response = send_command(enabled ? sensor_command::SET_BLUETOOTH : sensor_command::SET_BLUETOOTH, enabled ? enable_bluetooth_data : disable_bluetooth_data);
+
+        if (!response.has_value()) {
+            return false; // command failed
+        }
+
+        // maybe add config.bluetoot_en = enabled; // if needed
+
+        return true;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline bool PresenceSensor<uart_ctrl_t>::set_config_mode(bool enabled) {
+
+        auto response = send_command(enabled ? sensor_command::ENABLE_CONFIG_MODE : sensor_command::DISABLE_CONFIG_MODE, {});
+
+        if (!response.has_value()) {
+            return false; // command failed
         }
 
         config.config_mode_en = enabled;
+
+        return true; // command succeeded
     }
 
-    /*
-        This whole function should be refactored into a class and/or several static functions.
+    template <uart_ctrl_req uart_ctrl_t>
+    bool LD2410C::PresenceSensor<uart_ctrl_t>::restart() {
+        auto response = send_command(sensor_command::RESTART_SENSOR, {});
+        
+        return response.has_value(); // return true if command succeeded, false otherwise
+    }
 
-        TODO NOTE:
-            Commands that need a response will somehow need to be dealt with.
-            Maybe separate status frames from command responses somehow. Also, race conditions etc if run() is called from separate thread/cpu
-            Restructuring necessary, core logic should work okay (untested, but builds)
-    */
     template <uart_ctrl_req uart_ctrl_t>
     inline void PresenceSensor<uart_ctrl_t>::run() {
 

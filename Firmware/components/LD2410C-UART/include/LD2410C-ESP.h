@@ -32,7 +32,7 @@ namespace LD2410C {
 
         hex[frame.size() * fmt_render_len] = '\0';
 
-        ESP_LOGI(tag, "{ %s }", hex);
+        ESP_LOGI(tag, "{ %s}", hex);
 
         delete[] hex;
     }

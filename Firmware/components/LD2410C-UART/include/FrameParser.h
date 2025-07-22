@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <span>
 #include <vector>
+#include <optional>
 
 namespace LD2410C {
 
@@ -117,10 +118,10 @@ namespace LD2410C {
         bool is_status{false}, is_done{false};
 
     public:
-        inline static constexpr sensor_command get_command_from_frame(std::span<const uint8_t> frame) {
-            if (frame.size() < 4) return sensor_command::GET_CONFIG; // default command
+        inline static constexpr std::optional<sensor_command> get_command_from_frame(std::span<const uint8_t> frame) {
+            if (frame.size() < 2) return std::nullopt; // default command
 
-            uint16_t command = (frame[3] << 8) | frame[2];
+            uint16_t command = (frame[1] << 8) | frame[0];
             return static_cast<sensor_command>(little_endian_conv(command));
         }
 

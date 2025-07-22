@@ -21,7 +21,8 @@
     "*.map": "json",
     "*.tset": "json",
     "format": "cpp",
-    "iosfwd": "cpp"
+    "iosfwd": "cpp",
+    "span": "cpp"
 },
 "C_Cpp.default.compilerPath": "D:/System/espressif/tools/tools/riscv32-esp-elf/esp-14.2.0_20241119/riscv32-esp-elf/bin/riscv32-esp-elf-g++.exe"
 }

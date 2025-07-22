@@ -6,8 +6,8 @@
 
 #include "LD2410C-ESP.h"
 #include "esp_chip_info.h"
-#include "esp_flash.h"
 #include "esp_log.h"
+#include "esp_flash.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,29 +26,48 @@ LD2410C::PresenceSensor sensor(uart_adapter);
 void app_main(void) {
     using namespace LD2410C;
 
-    auto config_task = [](void *pvParameters) {
+    auto test_task = [](void *pvParameters) {
         auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
 
-        while (true) {
-            // Example: Set engineering mode
-            sensorPtr->set_config_mode(true);
-            vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
-            sensorPtr->set_config_mode(false);
-            vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
-        }
-        vTaskDelete(NULL);
-    };
-
-    auto engineer_task = [](void *pvParameters) {
-        auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
+        // while (true) {
+        //     // Example: Set engineering mode
+        //     sensorPtr->set_config_mode(true);
+        //     vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+        //     sensorPtr->set_config_mode(false);
+        //     vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+        // }
 
         while (true) {
-            // Example: Set engineering mode
-            sensorPtr->set_engineering_mode(true);
-            vTaskDelay(3000 / portTICK_PERIOD_MS); // Wait for 5 seconds
-            sensorPtr->set_engineering_mode(false);
-            vTaskDelay(3000 / portTICK_PERIOD_MS); // Wait for 5 seconds
+
+            ESP_LOGI(tag, "Enabling config mode...");
+            if (sensorPtr->set_config_mode(true))
+                ESP_LOGI(tag, "Config mode enabled.");
+            else
+                ESP_LOGE(tag, "Failed");
+
+            ESP_LOGI(tag, "Enabling engineering mode...");
+            if (sensorPtr->set_engineering_mode(true))
+                ESP_LOGI(tag, "Engineering mode enabled.");
+            else
+                ESP_LOGE(tag, "Failed");
+
+            ESP_LOGI(tag, "Enabling Bluetooth mode...");
+            if (sensorPtr->set_bluetooth_mode(true))
+                ESP_LOGI(tag, "Bluetooth mode enabled.");
+            else
+                ESP_LOGE(tag, "Failed");
+
+            vTaskDelay(1000 / portTICK_PERIOD_MS); // Wait for 1 second
+
+            ESP_LOGI(tag, "Restarting sensor...");
+            if (sensorPtr->restart())
+                ESP_LOGI(tag, "Sensor restarted.");
+            else
+                ESP_LOGE(tag, "Failed");
+
+            vTaskDelay(2000 / portTICK_PERIOD_MS); // Wait for 1 second
         }
+
         vTaskDelete(NULL);
     };
 
@@ -58,14 +77,13 @@ void app_main(void) {
 
         while (true) {
             sensorPtr->run();
-            vTaskDelay(100 / portTICK_PERIOD_MS);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
         }
         vTaskDelete(NULL);
     },
                 "presence_sensor_uart", 3072, &sensor, 5, NULL);
 
-    xTaskCreate(config_task, "engineering_mode_task_1", 2048, &sensor, 5, NULL);
-    xTaskCreate(engineer_task, "engineering_mode_task_2", 2048, &sensor, 5, NULL);
+    xTaskCreate(test_task, "test_sensor_task", 2048, &sensor, 5, NULL);
 
     // ESP_LOGI(tag, "Main task running...");
     // while (true) {
