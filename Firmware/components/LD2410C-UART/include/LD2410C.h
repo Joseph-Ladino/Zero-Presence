@@ -76,6 +76,7 @@ namespace LD2410C {
         bool set_engineering_mode(bool enabled);
         bool set_bluetooth_mode(bool enabled);
         bool set_config_mode(bool enabled);
+        bool set_max_distance_duration(uint8_t movement_distance, uint8_t stationary_distance, uint16_t nobody_detected_timeout_s);
 
         bool set_baud_rate(sensor_baud_rate baud_rate);
         bool set_baud_rate(uint16_t baud_rate);
@@ -172,8 +173,8 @@ namespace LD2410C {
 
         bool success = response_command.value() == expected_command && response.size() >= 4 && response[2] == 0x00 && response[3] == 0x00; // check if ACK and no error
 
-        if(success)
-            return std::vector<uint8_t> { response.begin() + 4, response.end() };
+        if (success)
+            return std::vector<uint8_t>{response.begin() + 4, response.end()};
 
         return std::nullopt; // command failed, return empty optional
     }
@@ -200,7 +201,7 @@ namespace LD2410C {
 
     template <uart_ctrl_req uart_ctrl_t>
     inline bool PresenceSensor<uart_ctrl_t>::set_bluetooth_mode(bool enabled) {
-        
+
         constexpr std::array<uint8_t, 2> enable_bluetooth_data{0x01, 0x00};
         constexpr std::array<uint8_t, 2> disable_bluetooth_data{0x00, 0x00};
 
@@ -230,10 +231,82 @@ namespace LD2410C {
     }
 
     template <uart_ctrl_req uart_ctrl_t>
+    inline bool PresenceSensor<uart_ctrl_t>::set_max_distance_duration(uint8_t movement_distance, uint8_t stationary_distance, uint16_t nobody_detected_timeout_s) {
+        if (movement_distance < 2 || movement_distance > 8 ||
+            stationary_distance < 2 || stationary_distance > 8) {
+            return false; // invalid parameters
+        }
+
+        auto timeout = little_endian_conv(nobody_detected_timeout_s);
+
+        std::array<uint8_t, 18> data{
+            // movement distance gate
+            0x00, 0x00, movement_distance, 0x00, 0x00, 0x00,
+
+            // stationary distance gate
+            0x01, 0x00, stationary_distance, 0x00, 0x00, 0x00,
+
+            // nobody detected timeout
+            0x02, 0x00,
+            static_cast<uint8_t>(nobody_detected_timeout_s & 0xFF),        // lower byte
+            static_cast<uint8_t>((nobody_detected_timeout_s >> 8) & 0xFF), // upper byte
+            0x00, 0x00};
+
+        return send_command(sensor_command::SET_MAX_DISTANCE_DURATION, data).has_value();
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    bool LD2410C::PresenceSensor<uart_ctrl_t>::set_baud_rate(sensor_baud_rate baud_rate) {
+        auto response = send_command(sensor_command::SET_SERIAL_BAUD, {static_cast<uint8_t>(baud_rate)});
+
+        if (!response.has_value()) {
+            return false; // command failed
+        }
+
+        // restart module to apply new baud rate
+        if (!restart()) {
+            return false; // restart failed
+        }
+
+        config.baud_rate = baud_rate;
+
+        // set the new baud rate in the UART controller
+        return uart.set_baud_rate(static_cast<uint16_t>(baud_rate));
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    bool LD2410C::PresenceSensor<uart_ctrl_t>::set_baud_rate(uint16_t baud_rate) {
+        // convert baud rate to sensor_baud_rate enum
+        auto sensor_baud = static_cast<sensor_baud_rate>(baud_rate);
+
+        // check if the baud rate is valid
+        if (sensor_baud < sensor_baud_rate::BAUD_9600 || sensor_baud > sensor_baud_rate::BAUD_460800) {
+            return false; // invalid baud rate
+        }
+
+        return set_baud_rate(sensor_baud);
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
     bool LD2410C::PresenceSensor<uart_ctrl_t>::restart() {
         auto response = send_command(sensor_command::RESTART_SENSOR, {});
-        
+
         return response.has_value(); // return true if command succeeded, false otherwise
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    bool LD2410C::PresenceSensor<uart_ctrl_t>::reset() {
+        auto response = send_command(sensor_command::RESET_CONFIG, {});
+
+        if (!response.has_value()) {
+            return false; // command failed
+        }
+
+        // reset the config
+        config = sensor_config{};
+        uart.set_baud_rate(static_cast<uint16_t>(config.baud_rate)); // reset baud rate
+
+        return true; // command succeeded
     }
 
     template <uart_ctrl_req uart_ctrl_t>
