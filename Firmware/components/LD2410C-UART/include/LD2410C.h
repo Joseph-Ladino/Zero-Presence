@@ -5,6 +5,8 @@
 #include <bit>
 #include <concepts>
 #include <cstdint>
+#include <mutex>
+#include <shared_mutex>
 #include <span>
 #include <vector>
 
@@ -50,24 +52,39 @@ namespace LD2410C {
         sensor_baud_rate baud_rate = BAUD_460800; // default
     };
 
+    struct sensor_state {
+        sensor_target_state target_state{sensor_target_state::NONE};
+        uint16_t movement_distance{0};
+        uint8_t movement_energy{0};
+        uint16_t stationary_distance{0};
+        uint8_t stationary_energy{0};
+        uint16_t detection_distance{0};
+
+        std::array<uint8_t, 9> motion_distance_energy{0}, stationary_distance_energy{0};
+        uint8_t photosensitivy{0};
+        bool output_status{false};
+    };
+
     template <uart_ctrl_req uart_ctrl_t>
     struct PresenceSensor {
         uart_ctrl_t &uart;
         sensor_config config;
 
-        std::array<uint8_t, CONFIG_SENSOR_UART_RX_BUFFER_SIZE> rx_buffer{0};
         FrameParser frame_parser{};
 
         std::atomic_flag command_sent{false}, // used to signal that a command is being sent
             command_response_ready{false};    // used to signal that a command response is ready
         std::vector<uint8_t> command_response_frame{};
 
+        std::shared_mutex state_mutex;
+        sensor_state current_state{};
+
         static constexpr std::array<uint8_t, 4> command_header{0xFD, 0xFC, 0xFB, 0xFA}, command_footer{0x04, 0x03, 0x02, 0x01};
         static constexpr std::array<uint8_t, 4> status_header{0xF4, 0xF3, 0xF2, 0xF1}, status_footer{0xF8, 0xF7, 0xF6, 0xF5};
 
         static constexpr std::vector<uint8_t> create_command_frame(sensor_command sensor_command, std::span<const uint8_t> data);
 
-        std::vector<uint8_t> handle_status_frame(std::span<uint8_t> data);
+        void handle_status_frame(std::span<uint8_t> data);
         void handle_command_frame(std::span<uint8_t> data);
 
         std::optional<std::vector<uint8_t>> send_command(sensor_command sensor_command, std::span<const uint8_t> data);
@@ -83,6 +100,20 @@ namespace LD2410C {
 
         bool restart();
         bool reset();
+
+        // getters for current state
+        sensor_state get_state();
+        sensor_target_state get_target_state();
+        uint16_t get_movement_distance();
+        uint8_t get_movement_energy();
+        uint16_t get_stationary_distance();
+        uint8_t get_stationary_energy();
+        uint16_t get_detection_distance();
+
+        std::array<uint8_t, 9> get_motion_distance_energy();
+        std::array<uint8_t, 9> get_stationary_distance_energy();
+        uint8_t get_photosensitivy();
+        bool get_output_status();
 
         void run();
 
@@ -119,12 +150,45 @@ namespace LD2410C {
     }
 
     template <uart_ctrl_req uart_ctrl_t>
-    inline std::vector<uint8_t> PresenceSensor<uart_ctrl_t>::handle_status_frame(std::span<uint8_t> frame) {
+    inline void PresenceSensor<uart_ctrl_t>::handle_status_frame(std::span<uint8_t> frame) {
 
-        // TODO: refactor maybe?? why return vector???
-        // log_frame(frame);
+        // lots of magic numbers here, but they are pulled from the datasheet
 
-        return std::vector<uint8_t>();
+        // invalid status frame
+        if (frame.size() < 13 || !(frame[1] == 0xAA && frame[frame.size() - 2] == 0x55)) {
+            return;
+        }
+
+        bool is_engineering_mode = frame[0] == 0x01;
+
+        // skip first byte, header, footer, and empty trailing byte
+        auto target_data = frame.subspan(2, frame.size() - 4);
+
+        auto target_status = static_cast<sensor_target_state>(target_data[0]);
+
+        auto movement_distance = bytes_to_uint16(target_data[1], target_data[2]);
+        auto movement_energy = target_data[3];
+
+        auto stationary_distance = bytes_to_uint16(target_data[4], target_data[5]);
+        auto stationary_energy = target_data[6];
+
+        auto detection_distance = bytes_to_uint16(target_data[7], target_data[8]);
+
+        std::unique_lock lock(state_mutex);
+
+        current_state.target_state = target_status;
+        current_state.movement_distance = movement_distance;
+        current_state.movement_energy = movement_energy;
+        current_state.stationary_distance = stationary_distance;
+        current_state.stationary_energy = stationary_energy;
+        current_state.detection_distance = detection_distance;
+
+        if (is_engineering_mode) {
+            std::copy(target_data.begin() + 9, target_data.begin() + 18, current_state.motion_distance_energy.begin());
+            std::copy(target_data.begin() + 19, target_data.begin() + 28, current_state.stationary_distance_energy.begin());
+            current_state.photosensitivy = target_data[28];
+            current_state.output_status = target_data[29];
+        }
     }
 
     template <uart_ctrl_req uart_ctrl_t>
@@ -310,7 +374,74 @@ namespace LD2410C {
     }
 
     template <uart_ctrl_req uart_ctrl_t>
+    inline sensor_state PresenceSensor<uart_ctrl_t>::get_state() {
+        std::shared_lock lock(state_mutex);
+        return current_state;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline sensor_target_state PresenceSensor<uart_ctrl_t>::get_target_state() {
+        std::shared_lock lock(state_mutex);
+        return current_state.target_state;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline uint16_t PresenceSensor<uart_ctrl_t>::get_movement_distance() {
+        std::shared_lock lock(state_mutex);
+        return current_state.movement_distance;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline uint8_t LD2410C::PresenceSensor<uart_ctrl_t>::get_movement_energy() {
+        std::shared_lock lock(state_mutex);
+        return current_state.movement_energy;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline uint16_t LD2410C::PresenceSensor<uart_ctrl_t>::get_stationary_distance() {
+        std::shared_lock lock(state_mutex);
+        return current_state.stationary_distance;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline uint8_t LD2410C::PresenceSensor<uart_ctrl_t>::get_stationary_energy() {
+        std::shared_lock lock(state_mutex);
+        return current_state.stationary_energy;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline uint16_t LD2410C::PresenceSensor<uart_ctrl_t>::get_detection_distance() {
+        std::shared_lock lock(state_mutex);
+        return current_state.detection_distance;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline std::array<uint8_t, 9> LD2410C::PresenceSensor<uart_ctrl_t>::get_motion_distance_energy() {
+        std::shared_lock lock(state_mutex);
+        return current_state.motion_distance_energy;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline std::array<uint8_t, 9> LD2410C::PresenceSensor<uart_ctrl_t>::get_stationary_distance_energy() {
+        std::shared_lock lock(state_mutex);
+        return current_state.stationary_distance_energy;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline uint8_t LD2410C::PresenceSensor<uart_ctrl_t>::get_photosensitivy() {
+        std::shared_lock lock(state_mutex);
+        return current_state.photosensitivy;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
+    inline bool LD2410C::PresenceSensor<uart_ctrl_t>::get_output_status() {
+        std::shared_lock lock(state_mutex);
+        return current_state.output_status;
+    }
+
+    template <uart_ctrl_req uart_ctrl_t>
     inline void PresenceSensor<uart_ctrl_t>::run() {
+        std::array<uint8_t, CONFIG_SENSOR_UART_RX_BUFFER_SIZE> rx_buffer{0};
 
         auto len_read = uart.read_bytes(rx_buffer.data(), rx_buffer.size(), 20);
 
@@ -332,7 +463,6 @@ namespace LD2410C {
 
                 frame_parser.reset();
             }
-
-        } // namespace LD2410C
+        }
     }
-}
+} // namespace LD2410C

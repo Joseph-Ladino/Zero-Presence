@@ -4,9 +4,9 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
-#include <optional>
 
 namespace LD2410C {
 
@@ -79,6 +79,7 @@ namespace LD2410C {
     constexpr uint16_t little_endian_conv(uint16_t value) {
         if (std::endian::native == std::endian::little)
             return value;
+
         return (value >> 8) | (value << 8);
     }
 
@@ -86,8 +87,23 @@ namespace LD2410C {
     constexpr uint32_t little_endian_conv(uint32_t value) {
         if (std::endian::native == std::endian::little)
             return value;
+
         return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) |
                ((value & 0x00FF0000) >> 8) | ((value & 0xFF000000) >> 24);
+    }
+
+    constexpr uint16_t bytes_to_uint16(uint8_t lower_byte, uint8_t upper_byte) {
+        if (std::endian::native == std::endian::little)
+            return ((upper_byte << 8) | lower_byte);
+
+        return ((lower_byte << 8) | upper_byte);
+    }
+
+    constexpr uint32_t bytes_to_uint32(uint8_t byte1, uint8_t byte2, uint8_t byte3, uint8_t byte4) {
+        if (std::endian::native == std::endian::little)
+            return (byte4 << 24) | (byte3 << 16) | (byte2 << 8) | byte1;
+
+        return (byte1 << 24) | (byte2 << 16) | (byte3 << 8) | byte4;
     }
 
     // parses a single data frame from sensor
