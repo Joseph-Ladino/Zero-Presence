@@ -6,8 +6,8 @@
 
 #include "LD2410C-ESP.h"
 #include "esp_chip_info.h"
-#include "esp_log.h"
 #include "esp_flash.h"
+#include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -28,15 +28,6 @@ void app_main(void) {
 
     auto test_task = [](void *pvParameters) {
         auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
-
-        // while (true) {
-        //     // Example: Set engineering mode
-        //     sensorPtr->set_config_mode(true);
-        //     vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
-        //     sensorPtr->set_config_mode(false);
-        //     vTaskDelay(5000 / portTICK_PERIOD_MS); // Wait for 5 seconds
-        // }
-
         while (true) {
 
             ESP_LOGI(tag, "Enabling config mode...");
@@ -83,20 +74,44 @@ void app_main(void) {
     },
                 "presence_sensor_uart", 3072, &sensor, 5, NULL);
 
-    xTaskCreate(test_task, "test_sensor_task", 2048, &sensor, 5, NULL);
+    // Create the task, passing the sensor pointer as parameter
+    xTaskCreate([](void *pvParameters) {
+        auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
 
-    // ESP_LOGI(tag, "Main task running...");
-    // while (true) {
-    //     // Simulate some work in the main task
-    //     // vTaskDelay(pdMS_TO_TICKS(100)); // Delay for 1 second
+        while (true) {
+            auto state = sensorPtr->get_state();
 
-    //     constexpr size_t buffer_size = 1024;
-    //     uint8_t buffer[buffer_size];
-    //     int bytes_read = uart_adapter.read_bytes(buffer, buffer_size, 20);
-    //     if (bytes_read > 0) {
-    //         // ESP_LOGI(tag, "Read %d bytes from UART", bytes_read);
-    //         std::span<uint8_t> data_span(buffer);
-    //         log_frame(data_span.subspan(0, bytes_read));
-    //     }
-    // }
+            ESP_LOGI(tag, "Current state: target_state=%d, movement_distance=%d, movement_energy=%d, stationary_distance=%d, stationary_energy=%d, detection_distance=%d",
+                     static_cast<int>(state.target_state),
+                     state.movement_distance,
+                     state.movement_energy,
+                     state.stationary_distance,
+                     state.stationary_energy,
+                     state.detection_distance);
+
+
+            log_frame("Motion distance energy", state.motion_distance_energy);
+            log_frame("Stationary distance energy", state.stationary_distance_energy);
+            ESP_LOGI(tag, "Photosensitivity: %d", state.photosensitivy);
+            ESP_LOGI(tag, "Output status: %s", state.output_status ? "ON" : "OFF");
+
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+
+            ESP_LOGI(tag, "Setting config mode...");
+            if (sensorPtr->set_config_mode(true))
+                ESP_LOGI(tag, "Config mode set.");
+            else
+                ESP_LOGE(tag, "Failed to set config mode.");
+
+            ESP_LOGI(tag, "Setting engineering mode...");
+            if (sensorPtr->set_engineering_mode(true))
+                ESP_LOGI(tag, "Engineering mode set successfully.");
+            else
+                ESP_LOGE(tag, "Failed to set engineering mode.");
+        }   
+        vTaskDelete(NULL);
+    },
+                "test_uart_status_frames", 3072, &sensor, 5, NULL);
+
+    // xTaskCreate(test_task, "test_sensor_task", 2048, &sensor, 5, NULL);
 }
