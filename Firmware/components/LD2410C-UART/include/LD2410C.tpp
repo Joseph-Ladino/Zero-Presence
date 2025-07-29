@@ -1,5 +1,6 @@
-#include "LD2410C.h"
 #pragma once
+
+#include "LD2410C.h"
 namespace LD2410C {
 
     template <uart_ctrl_req uart_ctrl_t>

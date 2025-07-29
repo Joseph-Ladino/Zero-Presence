@@ -15,6 +15,7 @@
 #include <array>
 #include <inttypes.h>
 #include <stdio.h>
+#include "provisioning-example.h"
 
 extern "C" void app_main(void);
 
@@ -78,6 +79,7 @@ void app_main(void) {
     xTaskCreate([](void *pvParameters) {
         auto *sensorPtr = static_cast<PresenceSensor<ESP32_UART_Adapter> *>(pvParameters);
 
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
         while (true) {
             auto state = sensorPtr->get_state();
 
@@ -114,4 +116,7 @@ void app_main(void) {
                 "test_uart_status_frames", 3072, &sensor, 5, NULL);
 
     // xTaskCreate(test_task, "test_sensor_task", 2048, &sensor, 5, NULL);
+
+    ESP_LOGI(tag, "Starting provisioning example...");
+    init_wifi_provisioning();
 }
